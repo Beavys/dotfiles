@@ -9,8 +9,33 @@ param(
     [switch]$Force,
     
     [Parameter(HelpMessage = "Skip winget installation and use alternative methods")]
-    [switch]$SkipWinget
+    [switch]$SkipWinget,
+    
+    [Parameter(HelpMessage = "Skip user confirmation when running from web")]
+    [switch]$SkipConfirmation
 )
+
+# Safety check for remote execution
+if ($MyInvocation.InvocationName -like "*iex*" -or $MyInvocation.InvocationName -like "*Invoke-Expression*") {
+    Write-Host "⚠️  RUNNING SCRIPT FROM WEB - SECURITY WARNING" -ForegroundColor Red
+    Write-Host "This script will modify your system. Please review the code before proceeding." -ForegroundColor Yellow
+    Write-Host "Script source: https://github.com/MeekoLab/dotfiles/blob/main/install/windows.ps1" -ForegroundColor Cyan
+    
+    if (-not $SkipConfirmation) {
+        Write-Host ""
+        $confirmation = Read-Host "Do you want to continue? (type 'yes' to proceed)"
+        if ($confirmation -ne "yes") {
+            Write-Host "Script execution cancelled by user." -ForegroundColor Yellow
+            return
+        }
+    }
+    
+    # Force DryRun for safety when running from web
+    if (-not $DryRun -and -not $Force) {
+        Write-Host "Running in DRY RUN mode for safety. Use -Force to make actual changes." -ForegroundColor Yellow
+        $DryRun = $true
+    }
+}
 
 # Script metadata
 $script:ScriptVersion = "2.0.0"
@@ -88,7 +113,7 @@ function Get-SystemInfo {
 #region WinGet Management
 function Test-WinGetAvailable {
     try {
-        # Method 1: Check if winget command is available
+        # Method 1: Check if winget command is available in PATH
         $wingetCmd = Get-Command -Name winget -CommandType Application -ErrorAction SilentlyContinue
         if ($wingetCmd) {
             Write-Log "WinGet found via PATH: $($wingetCmd.Source)" -Level Info
@@ -105,12 +130,12 @@ function Test-WinGetAvailable {
             if ($path -like "*`**") {
                 $resolved = Get-ChildItem -Path (Split-Path $path) -Filter (Split-Path $path -Leaf) -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($resolved) {
-                    Write-Log "WinGet found at: $($resolved.FullName)" -Level Info
+                    Write-Log "WinGet found at: $($resolved.FullName) (not in PATH)" -Level Warning
                     return $resolved.FullName
                 }
             }
             elseif (Test-Path $path) {
-                Write-Log "WinGet found at: $path" -Level Info
+                Write-Log "WinGet found at: $path (not in PATH)" -Level Warning
                 return $path
             }
         }
@@ -238,8 +263,20 @@ function Install-WinGet {
 function Get-WinGetPath {
     $wingetPath = Test-WinGetAvailable
     
+    # If winget found but not via PATH, try to fix PATH
+    if ($wingetPath) {
+        $wingetCmd = Get-Command -Name winget -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $wingetCmd) {
+            Write-Log "WinGet found but not in PATH. Attempting to fix..." -Level Warning
+            Restore-WinGetAccess | Out-Null
+            # Re-test after PATH fix
+            $wingetPath = Test-WinGetAvailable
+        }
+    }
+    
+    # If still not found and not skipping, try installation
     if (-not $wingetPath -and -not $SkipWinget) {
-        Write-Log "WinGet not found. Attempting installation and restoration..." -Level Warning
+        Write-Log "WinGet not found. Attempting installation..." -Level Warning
         $wingetPath = Install-WinGet
     }
     
@@ -323,12 +360,60 @@ function Test-CommandAvailable {
     param([string]$CommandName)
     
     try {
+        # Try command as-is first
         $command = Get-Command -Name $CommandName -CommandType Application -ErrorAction SilentlyContinue
-        return $null -ne $command
+        if ($command) {
+            return @{ Available = $true; Path = $command.Source; Version = $null }
+        }
+        
+        # Try with .exe extension
+        $commandExe = Get-Command -Name "$CommandName.exe" -CommandType Application -ErrorAction SilentlyContinue
+        if ($commandExe) {
+            return @{ Available = $true; Path = $commandExe.Source; Version = $null }
+        }
+        
+        return @{ Available = $false; Path = $null; Version = $null }
     }
     catch {
-        return $false
+        return @{ Available = $false; Path = $null; Version = $null }
     }
+}
+
+function Find-WinGetPackageBinary {
+    param([hashtable]$Package)
+    
+    try {
+        $packagesRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        if (-not (Test-Path $packagesRoot)) { return $null }
+        
+        $prefix = "$($Package.id)_Microsoft.Winget.Source_"
+        $dirs = Get-ChildItem -Path $packagesRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$prefix*" }
+        
+        foreach ($dir in $dirs) {
+            # Try different executable name patterns
+            $possibleNames = @(
+                "$($Package.command).exe",
+                "$($Package.name).exe",
+                "$(($Package.id -split '\.')[-1]).exe"
+            )
+            
+            foreach ($name in $possibleNames) {
+                # Check root directory
+                $exe = Join-Path $dir.FullName $name
+                if (Test-Path $exe) { return $exe }
+                
+                # Check bin subdirectory
+                $binExe = Join-Path (Join-Path $dir.FullName 'bin') $name
+                if (Test-Path $binExe) { return $binExe }
+            }
+            
+            # Fallback: search recursively for any .exe
+            $found = Get-ChildItem -Path $dir.FullName -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { return $found.FullName }
+        }
+    } 
+    catch {}
+    return $null
 }
 #endregion
 
@@ -452,26 +537,45 @@ function Install-RequiredPackages {
 
 function Test-InstallationResults {
     $commands = @(
-        @{ name = "Git"; command = "git" },
-        @{ name = "cURL"; command = "curl" },
-        @{ name = "Chezmoi"; command = "chezmoi" }
+        @{ name = "Git"; command = "git"; id = "Git.Git" },
+        @{ name = "cURL"; command = "curl"; id = "cURL.cURL" },
+        @{ name = "Chezmoi"; command = "chezmoi"; id = "twpayne.chezmoi" }
     )
     
     Write-Log "Verifying installations..." -Level Info
     
     foreach ($cmd in $commands) {
-        if (Test-CommandAvailable -CommandName $cmd.command) {
+        $result = Test-CommandAvailable -CommandName $cmd.command
+        
+        if ($result.Available) {
             try {
-                $version = & $cmd.command --version 2>&1 | Select-Object -First 1
+                # Special handling for curl vs curl.exe
+                $versionCmd = if ($cmd.command -eq "curl") { "curl.exe" } else { $cmd.command }
+                $version = & $versionCmd --version 2>&1 | Select-Object -First 1
                 Write-Log "$($cmd.name) is available - $version" -Level Success
+                Write-Log "  Location: $($result.Path)" -Level Info
             }
             catch {
                 Write-Log "$($cmd.name) is available but version check failed" -Level Warning
+                Write-Log "  Location: $($result.Path)" -Level Info
             }
         }
         else {
-            Write-Log "$($cmd.name) is NOT available in PATH" -Level Warning
-            Write-Log "You may need to restart your terminal or add the program to your PATH manually" -Level Info
+            # Try to find in WinGet packages
+            $wingetPath = Find-WinGetPackageBinary -Package $cmd
+            if ($wingetPath) {
+                Write-Log "$($cmd.name) is NOT available in PATH but found at:" -Level Warning
+                Write-Log "  $wingetPath" -Level Info
+                
+                # Get the directory to add to PATH
+                $dirToAdd = Split-Path $wingetPath
+                Write-Log "  To fix: Add '$dirToAdd' to your PATH" -Level Info
+                Write-Log "  Or create a symbolic link in a directory already in PATH" -Level Info
+            }
+            else {
+                Write-Log "$($cmd.name) is NOT available and not found in WinGet packages" -Level Error
+                Write-Log "  You may need to reinstall this package" -Level Info
+            }
         }
     }
 }
@@ -540,7 +644,7 @@ function Invoke-DotfilesSetup {
         Test-InstallationResults
         
         # Final instructions
-        Write-Log "" -Level Info
+        Write-Host "" # Empty line for spacing
         Write-Log "Setup completed!" -Level Success
         Write-Log "Next steps:" -Level Info
         Write-Log "1. Restart your terminal to ensure all PATH changes take effect" -Level Info
@@ -548,7 +652,7 @@ function Invoke-DotfilesSetup {
         Write-Log "3. Check the log file for detailed information: $script:LogFile" -Level Info
         
         if (-not $wingetPath) {
-            Write-Log "" -Level Warning
+            Write-Host "" # Empty line for spacing
             Write-Log "WinGet Recovery Instructions:" -Level Warning
             Write-Log "1. Open Microsoft Store and install 'App Installer'" -Level Info
             Write-Log "2. Or download from: https://github.com/microsoft/winget-cli/releases/latest" -Level Info
@@ -567,11 +671,19 @@ function Invoke-DotfilesSetup {
 # Script entry point
 try {
     Invoke-DotfilesSetup
+    Write-Log "Script execution completed successfully" -Level Success
 }
 catch {
     Write-Log "Script execution failed: $($_.Exception.Message)" -Level Error
-    exit 1
+    Write-Log "Stack trace: $($_.ScriptStackTrace)" -Level Error
+    Write-Host "Press any key to continue..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
-
-Write-Log "Script execution completed successfully" -Level Success
-exit 0
+finally {
+    Write-Log "Log file saved to: $script:LogFile" -Level Info
+    # Don't exit when running from web (iex) - let user see results
+    if ($MyInvocation.InvocationName -notlike "*iex*" -and $MyInvocation.InvocationName -notlike "*Invoke-Expression*") {
+        Write-Host "Press any key to exit..." -ForegroundColor Cyan
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+}
