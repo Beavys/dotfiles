@@ -45,8 +45,13 @@ function Ensure-Winget {
 
         $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
         if ($env:PATH -notlike "*$wingetPath*") {
-            $env:PATH += ";$wingetPath"
-            Write-Info "PATH updated with WindowsApps directory."
+            Write-Info "Updating PATH globally..."
+            $currentPath = [System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
+            if ($currentPath -notlike "*$wingetPath*") {
+                $newPath = "$currentPath;$wingetPath"
+                [System.Environment]::SetEnvironmentVariable("Path", $newPath, [System.EnvironmentVariableTarget]::Machine)
+                Write-Info "PATH updated globally. Please restart your terminal or log out and log in again to apply changes."
+            }
         }
 
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
