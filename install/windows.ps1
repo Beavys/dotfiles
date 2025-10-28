@@ -34,24 +34,13 @@ function Ensure-Winget {
                 Write-Info "Installing App Installer..."
                 Add-AppxPackage -Path $installerPath
                 Remove-Item $installerPath -ErrorAction SilentlyContinue
-                Write-Success "App Installer installed. Attempting to reload winget..."
+                Write-Success "App Installer installed. Please restart your terminal to ensure winget is available."
             } catch {
                 Write-ErrorMsg "Automatic installation failed. Please install App Installer manually from Microsoft Store."
                 exit 1
             }
         } else {
-            Write-Info "App Installer is already installed."
-        }
-
-        $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
-        if ($env:PATH -notlike "*$wingetPath*") {
-            Write-Info "Updating PATH globally..."
-            $currentPath = [System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
-            if ($currentPath -notlike "*$wingetPath*") {
-                $newPath = "$currentPath;$wingetPath"
-                [System.Environment]::SetEnvironmentVariable("Path", $newPath, [System.EnvironmentVariableTarget]::Machine)
-                Write-Info "PATH updated globally. Please restart your terminal or log out and log in again to apply changes."
-            }
+            Write-Info "App Installer is already installed. Please restart your terminal to ensure winget is available."
         }
 
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
