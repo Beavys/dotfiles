@@ -22,27 +22,35 @@ function Write-Info($msg) { Write-Host $msg -ForegroundColor Cyan }
 function Ensure-Winget {
     Write-Info "Checking for winget..."
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-WarningMsg "winget not found. Attempting to install App Installer from Microsoft Store..."
-        try {
-            $appInstallerUrl = "https://aka.ms/getwinget"
-            $installerPath = "$env:TEMP\AppInstaller.appxbundle"
-            Write-Info "Downloading App Installer..."
-            Invoke-WebRequest -Uri $appInstallerUrl -OutFile $installerPath
-            Write-Info "Installing App Installer..."
-            Add-AppxPackage -Path $installerPath
-            Remove-Item $installerPath
-            Write-Success "App Installer installed. Attempting to reload winget..."
-            $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
-            if ($env:PATH -notlike "*$wingetPath*") {
-                $env:PATH += ";$wingetPath"
-                Write-Info "PATH updated with WindowsApps directory."
-            }
-            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-                Write-ErrorMsg "winget still not found. Please restart your terminal or log out and log in again to update PATH."
+        Write-Info "Checking if App Installer is already installed..."
+        $appInstaller = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue
+        if ($null -eq $appInstaller) {
+            Write-WarningMsg "App Installer not found. Attempting to install from Microsoft Store..."
+            try {
+                $appInstallerUrl = "https://aka.ms/getwinget"
+                $installerPath = "$env:TEMP\AppInstaller.appxbundle"
+                Write-Info "Downloading App Installer..."
+                Invoke-WebRequest -Uri $appInstallerUrl -OutFile $installerPath
+                Write-Info "Installing App Installer..."
+                Add-AppxPackage -Path $installerPath
+                Remove-Item $installerPath -ErrorAction SilentlyContinue
+                Write-Success "App Installer installed. Attempting to reload winget..."
+            } catch {
+                Write-ErrorMsg "Automatic installation failed. Please install App Installer manually from Microsoft Store."
                 exit 1
             }
-        } catch {
-            Write-ErrorMsg "Automatic installation failed. Please install App Installer manually from Microsoft Store."
+        } else {
+            Write-Info "App Installer is already installed."
+        }
+
+        $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+        if ($env:PATH -notlike "*$wingetPath*") {
+            $env:PATH += ";$wingetPath"
+            Write-Info "PATH updated with WindowsApps directory."
+        }
+
+        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Write-ErrorMsg "winget still not found. Please restart your terminal or log out and log in again to update PATH."
             exit 1
         }
     }
