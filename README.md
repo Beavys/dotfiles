@@ -11,3 +11,13 @@ To run the setup script directly from Git (make sure to run from **PowerShell as
 ```powershell
 irm https://raw.githubusercontent.com/MeekoLab/dotfiles/main/install/windows.ps1 | iex
 ```
+
+## 🚀 Initialize chezmoi after setup
+
+After running the setup script, initialize your dotfiles with chezmoi:
+
+```powershell
+chezmoi init --apply https://github.com/MeekoLab/dotfiles
+```
+
+This will clone and apply your dotfiles from the MeekoLab repository automatically.

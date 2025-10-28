@@ -86,4 +86,4 @@ foreach ($pkg in $basePackages) {
 }
 
 Write-Success "Minimal setup complete! You can now use chezmoi to initialize and apply your dotfiles."
-Write-Info "Example: chezmoi init <your-github-username> && chezmoi apply"
+Write-Info "Example: chezmoi init --apply https://github.com/MeekoLab/dotfiles"
