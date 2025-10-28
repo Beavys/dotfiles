@@ -1,1 +1,30 @@
+# Main chezmoi configuration
 sourceDir = "~/.dotfiles"
+
+# Set default umask for file permissions
+umask = "022"
+
+# Default template extension for chezmoi templates
+defaultTemplateExtension = "tmpl"
+
+# Enable confirmation prompts for destructive actions
+prompt = true
+
+# Example of custom data for templates
+[data]
+  name = "MeekoLab"
+  email = "your@email.com"
+  github = "MeekoLab"
+
+# Minimum age for auto-update (e.g. 24h)
+minAge = "24h"
+
+# Add platform-specific configuration if needed
+[windows]
+  sourceDir = "C:/Users/{{ .username }}/.dotfiles"
+
+[linux]
+  sourceDir = "/home/{{ .username }}/.dotfiles"
+
+[darwin]
+  sourceDir = "/Users/{{ .username }}/.dotfiles"
