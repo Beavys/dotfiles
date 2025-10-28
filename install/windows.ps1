@@ -37,7 +37,7 @@ function Ensure-Winget {
                 Write-Success "App Installer installed. Please restart your terminal to ensure winget is available."
             } catch {
                 Write-ErrorMsg "Automatic installation failed. Please install App Installer manually from Microsoft Store."
-                exit 1
+                return
             }
         } else {
             Write-Info "App Installer is already installed. Please restart your terminal to ensure winget is available."
@@ -45,7 +45,7 @@ function Ensure-Winget {
 
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
             Write-ErrorMsg "winget still not found. Please restart your terminal or log out and log in again to update PATH."
-            exit 1
+            return
         }
     }
 }
