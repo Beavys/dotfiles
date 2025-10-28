@@ -9,5 +9,5 @@ This repository contains cross-platform dotfiles and setup scripts for quickly c
 To run the setup script directly from Git (make sure to run from **PowerShell as Administrator**):
 
 ```powershell
-irm https://raw.githubusercontent.com/MeekoLab/dotfiles/main/install/windows/setup.ps1 | iex
+irm https://raw.githubusercontent.com/MeekoLab/dotfiles/main/install/windows.ps1 | iex
 ```
