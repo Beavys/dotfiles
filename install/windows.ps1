@@ -1,9 +1,4 @@
-﻿#Requires -Version 5.1
-
-# Minimal Windows bootstrap: banner, winget, chezmoi, curl, git
-# NOTE: Keep all comments and strings in English only
-
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
