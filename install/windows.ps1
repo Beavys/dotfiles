@@ -85,6 +85,19 @@ function Install-WithWinget {
     if ($p.ExitCode -ne 0) { Write-Host "$n install returned exit code $($p.ExitCode)" -ForegroundColor Yellow }
 }
 
+# Ensure PATH includes locations where winget places shims/links
+function Refresh-PathForSession {
+    $candidatePaths = @(
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+    )
+    foreach ($p in $candidatePaths) {
+        if (Test-Path $p) {
+            if ($env:Path -notlike "*$p*") { $env:Path = "$p;$env:Path" }
+        }
+    }
+}
+
 # Main
 Write-Banner
 
@@ -99,6 +112,9 @@ if (-not $winget) {
 Install-WithWinget -WingetPath $winget -Id 'twpayne.chezmoi' -Name 'chezmoi'
 Install-WithWinget -WingetPath $winget -Id 'cURL.cURL' -Name 'curl'
 Install-WithWinget -WingetPath $winget -Id 'Git.Git' -Name 'git'
+
+# Refresh PATH so new shims are visible in current session
+Refresh-PathForSession
 
 # Quick verification
 Write-Host ""; Write-Host "Verification:" -ForegroundColor Green
